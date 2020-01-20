@@ -41,18 +41,18 @@ class Autoencoder(nn.Module):
         super(Autoencoder,self).__init__()
         
         self.encoder = nn.Sequential(
-            nn.Conv2d(3, 6, kernel_size=5),
+            nn.Conv2d(1, 6, kernel_size=5),
             nn.ReLU(True),
-            nn.Conv2d(6,16,kernel_size=5),
+            nn.Conv2d(6,10,kernel_size=5),
             nn.ReLU(True))
         self.decoder = nn.Sequential(             
-            nn.ConvTranspose2d(16,6,kernel_size=5),
+            nn.ConvTranspose2d(10,6,kernel_size=5),
             nn.ReLU(True),
-            nn.ConvTranspose2d(6,3,kernel_size=5),
+            nn.ConvTranspose2d(6,1,kernel_size=5),
             nn.ReLU(True))
     def forward(self,x):
-        x = self.encoder(x)
-        x = self.decoder(x)
+        h = self.encoder(x)
+        x = self.decoder(h)
         if use_cuda:
             return x.cuda()
         else:
