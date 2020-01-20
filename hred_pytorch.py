@@ -20,6 +20,11 @@ import numpy as np
 import re
 import os.path
 
+import torchvision as tv
+import torchvision.transforms as transforms
+from torchvision.utils import save_image
+
+
 use_cuda = torch.cuda.is_available()
 
 groups = []
@@ -31,7 +36,30 @@ SOS_token = None
 # max sentence length
 MAX_LENGTH = 30
 
-class EncoderRNN(nn.Module):
+class Autoencoder(nn.Module):
+    def __init__(self):
+        super(Autoencoder,self).__init__()
+        
+        self.encoder = nn.Sequential(
+            nn.Conv2d(3, 6, kernel_size=5),
+            nn.ReLU(True),
+            nn.Conv2d(6,16,kernel_size=5),
+            nn.ReLU(True))
+        self.decoder = nn.Sequential(             
+            nn.ConvTranspose2d(16,6,kernel_size=5),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(6,3,kernel_size=5),
+            nn.ReLU(True))
+    def forward(self,x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        if use_cuda:
+            return x.cuda()
+        else:
+            return x
+        
+
+/*class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, n_layers=1):
         super(EncoderRNN, self).__init__()
         self.n_layers = n_layers
@@ -55,7 +83,7 @@ class EncoderRNN(nn.Module):
         if use_cuda:
             return result.cuda()
         else:
-            return result
+            return result  */
 
 class ContextRNN(nn.Module):
     def __init__(self, hidden_size, output_size, n_layers=1):
