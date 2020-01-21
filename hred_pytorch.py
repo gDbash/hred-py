@@ -201,7 +201,7 @@ class HRED_QA(object):
             dt = pkl.load(open(self.dictionary,'r'))
             self.word2id = {d[0]:d[1] for d in dt}
             self.id2word = {d[1]:d[0] for d in dt}
-            self.EOS_token = self.word2id['</s>']
+            self.EOS_token = self.word2id['__eou__']
             self.SOS_token = self.word2id['</d>']
             self.dictionary = dt
 
@@ -308,6 +308,12 @@ class HRED_QA(object):
         else:
             return context_hidden
 
+        
+    # unk represents rare words
+    # When get() is called, Python checks if the specified key exists in the dict. 
+    # If it does, then get() returns the value of that key. 
+    # If the key does not exist, then get() returns the value specified in the second argument to get().
+    
     def indexesFromSentence(self,word2id,sentence):
         return [word2id.get(word,word2id['<unk>']) for word in sentence.split(' ') if len(word) > 0]
 
