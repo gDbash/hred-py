@@ -243,28 +243,28 @@ class HRED_QA(object):
             last,max_length=None):
 
         max_length=self.max_sentence_length
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden()      #h0, initial encoder hidden state
 
         #encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
         #decoder_optimizer.zero_grad()
 
-        input_length = input_variable.size()[0]
-        target_length = target_variable.size()[0]
+        input_length = input_variable.size()[0]      #num of words in a turn
+        target_length = target_variable.size()[0]    #num of words in output dialogue 
 
-        encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size))
+        encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size))    #all the hidden states of encoderRNN
         encoder_outputs = encoder_outputs.cuda() if use_cuda else encoder_outputs
 
         loss = 0
 
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(
-                input_variable[ei], encoder_hidden)
-            encoder_outputs[ei] = encoder_output[0][0]
+                input_variable[ei], encoder_hidden)       #feeding a single word of turn to encoder and getting all hidden states 
+            encoder_outputs[ei] = encoder_output[0][0]    #final encoded sentence 
 
         decoder_input = Variable(torch.LongTensor([[self.SOS_token]]))
         decoder_input = decoder_input.cuda() if use_cuda else decoder_input
 
-        decoder_hidden = encoder_hidden
+        decoder_hidden = encoder_hidden 
         
         # calculate context
         context_output,context_hidden = context(encoder_output,context_hidden)
