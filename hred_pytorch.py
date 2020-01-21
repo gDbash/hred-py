@@ -530,7 +530,7 @@ if __name__=='__main__':
     with open(sys.argv[1],'r') as fp:
         for line in fp:
             groups.append([re.sub('<[^>]+>', '',p.strip()).lstrip() 
-                for p in line.replace('\n','').split('</s>') if len(p.strip()) > 0])
+                for p in line.replace('\n','').split('__eou__') if len(p.strip()) > 0])
     #dt = pkl.load(open(sys.argv[2],'r'))
     #word2id = {d[0]:d[1] for d in dt}
     #id2word = {d[1]:d[0] for d in dt}
