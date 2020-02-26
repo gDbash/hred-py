@@ -36,30 +36,9 @@ SOS_token = None
 # max sentence length
 MAX_LENGTH = 30
 
-class Autoencoder(nn.Module):
-    def __init__(self):
-        super(Autoencoder,self).__init__()
-        
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 6, kernel_size=5),
-            nn.ReLU(True),
-            nn.Conv2d(6,10,kernel_size=5),
-            nn.ReLU(True))
-        self.decoder = nn.Sequential(             
-            nn.ConvTranspose2d(10,6,kernel_size=5),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(6,1,kernel_size=5),
-            nn.ReLU(True))
-    def forward(self,x):
-        h = self.encoder(x)
-        x = self.decoder(h)
-        if use_cuda:
-            return x.cuda()
-        else:
-            return x
-        
 
-/*class EncoderRNN(nn.Module):
+
+class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, n_layers=1):
         super(EncoderRNN, self).__init__()
         self.n_layers = n_layers
@@ -83,7 +62,7 @@ class Autoencoder(nn.Module):
         if use_cuda:
             return result.cuda()
         else:
-            return result  */
+            return result  
 
 class ContextRNN(nn.Module):
     def __init__(self, hidden_size, output_size, n_layers=1):
@@ -178,6 +157,7 @@ class HRED_QA(object):
             learning_rate = 0.0001
             ):
         self.groups = groups
+        self.validation_grps = validation_grps
         self.dictionary = dictionary
         self.word2id = word2id
         self.id2word = id2word
@@ -198,11 +178,11 @@ class HRED_QA(object):
 
         # load word2id if not present but dictionary is string
         if self.dictionary and type(self.dictionary) == str and not self.word2id:
-            dt = pkl.load(open(self.dictionary,'r'))
+            dt = pickle.load(open(self.dictionary,'rb'))
             self.word2id = {d[0]:d[1] for d in dt}
             self.id2word = {d[1]:d[0] for d in dt}
-            self.EOS_token = self.word2id['__eou__']
-            self.SOS_token = self.word2id['</d>']
+            self.EOS_token = self.word2id['<eos>']
+            self.SOS_token = self.word2id['<sos>']
             self.dictionary = dt
 
         self.create_or_load_models()
@@ -353,7 +333,7 @@ class HRED_QA(object):
         print_loss_total = 0  # Reset every print_every
         plot_loss_total = 0  # Reset every plot_every
 
-        encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
+        #encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
         decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
         context_optimizer = optim.Adam(context.parameters(), lr=learning_rate)
 
@@ -372,7 +352,7 @@ class HRED_QA(object):
             #print len(training_group)
             context_hidden = context.initHidden()
             context_optimizer.zero_grad()
-            encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
+            #encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
             decoder_optimizer.zero_grad()
             for i in range(0, len(training_group)-1):
                 input_variable = training_group[i]
@@ -383,15 +363,15 @@ class HRED_QA(object):
 
                 if last:
                     loss,context_hidden = self.train(input_variable, target_variable, encoder,
-                             decoder, context, context_hidden, encoder_optimizer, decoder_optimizer, criterion, last)
+                             decoder, context, context_hidden,  decoder_optimizer, criterion, last)
                     print_loss_total += loss
                     plot_loss_total += loss
-                    encoder_optimizer.step()
+                    #encoder_optimizer.step()
                     decoder_optimizer.step()
                     context_optimizer.step()
                 else:
                     context_hidden = self.train(input_variable, target_variable, encoder,
-                             decoder, context, context_hidden, encoder_optimizer, decoder_optimizer, criterion, last)
+                             decoder, context, context_hidden,  decoder_optimizer, criterion, last)
 
             if iter % print_every == 0:
                 print_loss_avg = print_loss_total / print_every
@@ -531,39 +511,78 @@ if __name__=='__main__':
         for line in fp:
             groups.append([re.sub('<[^>]+>', '',p.strip()).lstrip() 
                 for p in line.replace('\n','').split('__eou__') if len(p.strip()) > 0])
-    #dt = pkl.load(open(sys.argv[2],'r'))
-    #word2id = {d[0]:d[1] for d in dt}
-    #id2word = {d[1]:d[0] for d in dt}
-    #EOS_token = word2id['</s>']
-    #SOS_token = word2id['</d>']
-    #hidden_size = 512
-    # calculate max sentence length
-    #max_len = 0
-    #for gr in groups:
-    #    ws = [p.split(' ') for p in gr]
-    #    ws = max([len(p) for p in ws])
-    #    if ws > max_len:
-    #        max_len = ws
-    #print max_len
-    #print len(word2id.keys())
-    #encoder1 = EncoderRNN(len(word2id.keys()), hidden_size)
-    #encoder1.load_state_dict(torch.load('encoder_5.model'))
-    #attn_decoder1 = AttnDecoderRNN(hidden_size, len(word2id.keys()),1, dropout_p=0.1)
-    #attn_decoder1.load_state_dict(torch.load('decoder_5.model'))
-    #context1 = ContextRNN(hidden_size,len(word2id.keys()))
-    #context1.load_state_dict(torch.load('context_5.model'))
-    #print "loaded models"
+    
+    dictionary = {}
+    index = 0
+    dictionary['<eos>'] = index      # end token
+    index+=1
+    dictionary['<sos>'] = index     # start token
+    index+=1
+    dictionary['<unk>'] = index    # unknown word
+    index+=1
 
-    #if use_cuda:
-    #    encoder1 = encoder1.cuda()
-    #    attn_decoder1 = attn_decoder1.cuda()
-    #    context1 = context1.cuda()
+    for item in groups:
+      for sent in item:
+        for char in sent.split(' '):
+          if char not in dictionary.keys():
+            dictionary[char] = index
+            index+=1
+    
+    for dial in groups:
+      for i in range(len(dial)):
+        sent = dial[i]
+        sent_list = ['<sos>']
+        sent_list.extend(sent.split(' '))
+        if(len(sent_list)>29):
+          sent_list = sent_list[0:28]
+          sent_list.extend(['<eos>'])
+          map(str.lower, sent_list)
+          sent = (' ').join(sent_list)
+          dial[i]=sent
 
-    #trainIters(encoder1, attn_decoder1, context1, print_every=100, evaluate_every=600)
+        else:
+          sent_list.extend(['<eos>'])
+          map(str.lower, sent_list)
+          sent = (' ').join(sent_list)
+          dial[i]=sent
+
+
+    dictionary = [(k,v) for k,v in dictionary.items()]
+
+    with open('dict' + '.pkl', 'wb') as f:
+      pickle.dump(dictionary, f, pickle.HIGHEST_PROTOCOL)
+
+    with open('dict'+ '.pkl', 'rb') as f:
+      dt=pickle.load(f)
+
+    validation_grps = []
+    with open('validation/dialogues_validation.txt','r') as fp:
+      for line in fp:
+        validation_grps.append([re.sub('<[^>]+>', '',p.strip()).lstrip() 
+           for p in line.replace('\n','').split('__eou__') if len(p.strip()) > 0])
+        
+    for dial in validation_grps:
+      
+      for i in range(len(dial)):
+        sent = dial[i]
+        sent_list = ['<sos>']
+        sent_list.extend(sent.split(' '))
+        if(len(sent_list)>29):
+          sent_list = sent_list[0:28]
+          sent_list.extend(['<eos>'])
+          sent = (' ').join(map(str.lower, sent_list))
+          dial[i]=sent
+          
+        else:
+          sent_list.extend(['<eos>'])
+          sent = (' ').join(map(str.lower, sent_list))
+          dial[i]=sent
+    
     hredQA = HRED_QA(groups=groups,
+            validation_grps = validation_grps, 
             dictionary=sys.argv[2],
-            encoder_file='encoder_5.model',
-            decoder_file='decoder_5.model',
+            encoder_file='encoder_5new_with_all_sent.model',
+            decoder_file='decoder_5new_with_all_sent.model',
             context_file='context_5.model')
 
     hredQA.trainIters()
