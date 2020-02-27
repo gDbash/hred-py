@@ -280,9 +280,7 @@ class HRED_QA(object):
         if last:
             loss.backward()
 
-        #encoder_optimizer.step()
-        #decoder_optimizer.step()
-
+        
         if last:
             return loss.data[0] / target_length, context_hidden
         else:
@@ -332,6 +330,7 @@ class HRED_QA(object):
         plot_losses = []
         print_loss_total = 0  # Reset every print_every
         plot_loss_total = 0  # Reset every plot_every
+        epoch_loss_total = 0
 
         #encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
         decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
@@ -343,17 +342,30 @@ class HRED_QA(object):
         #con_scheduler = StepLR(context_optimizer,step_size=3000,gamma=0.7) 
         criterion = nn.NLLLoss()
 
-        print "training started"
+        print ("training started")
         iter = 0
-        while True:
+        k = len(self.groups)
+        m = 0
+        epochs = 0
+        epoch_steps = 0
+        iter2 = 0
+        best_valid_loss = float('inf')
+        
+        while (epochs<80):
+      
+            if(m==0):
+              random.shuffle(self.groups)   #in place shuffling of dialogue groups
+            
+            training_group = self.variablesFromGroup(self.groups[m])
             iter +=1
-            #training_pair = training_pairs[iter - 1]
-            training_group = self.variablesFromGroup(random.choice(self.groups))
-            #print len(training_group)
+            
             context_hidden = context.initHidden()
+            
             context_optimizer.zero_grad()
-            #encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
+            
+            # pytorch accumulates gradients, so zero grad clears them up.
             decoder_optimizer.zero_grad()
+            
             for i in range(0, len(training_group)-1):
                 input_variable = training_group[i]
                 target_variable = training_group[i+1]
@@ -366,24 +378,49 @@ class HRED_QA(object):
                              decoder, context, context_hidden,  decoder_optimizer, criterion, last)
                     print_loss_total += loss
                     plot_loss_total += loss
-                    #encoder_optimizer.step()
+                    epoch_loss_total +=loss
+                    
                     decoder_optimizer.step()
                     context_optimizer.step()
+                    
+                    
                 else:
                     context_hidden = self.train(input_variable, target_variable, encoder,
                              decoder, context, context_hidden,  decoder_optimizer, criterion, last)
+                    
 
             if iter % print_every == 0:
                 print_loss_avg = print_loss_total / print_every
                 print_loss_total = 0
                 print('steps %d loss %.4f' % (iter,print_loss_avg))
 
-            if iter % (print_every * 3) == 0:
+            if iter % (print_every * 5) == 0:
                 # save models
-                print "saving models"
-                torch.save(encoder.state_dict(), self.encoder_file)
+                print ("saving models")
                 torch.save(decoder.state_dict(), self.decoder_file)
                 torch.save(context.state_dict(), self.context_file)
+            
+            if(m==k-1):
+              m=0
+              epochs = epochs + 1
+              epoch_loss_avg = epoch_loss_total/epoch_steps 
+              epoch_steps = 0
+              epoch_loss_total = 0
+              print()   # new line space
+              print('epochs %d train loss %.4f' % (epochs,epoch_loss_avg))
+              val_loss = self.validation_evaluate(encoder, decoder)
+              print('epochs %d validation loss %.4f' % (epochs,val_loss))
+              print() # new line space
+
+              if val_loss < best_valid_loss:
+                best_valid_loss = val_loss
+                print ("saving models")
+                torch.save(decoder.state_dict(), self.decoder_file)
+                torch.save(context.state_dict(), self.context_file)
+                print()
+
+
+            m = m + 1
 
             if iter % plot_every == 0:
                 plot_loss_avg = plot_loss_total / plot_every
@@ -391,13 +428,9 @@ class HRED_QA(object):
                 plot_loss_total = 0
 
             if iter % evaluate_every == 0:
-                self.evaluateRandomly(encoder,decoder,context)
+                self.evaluateRandomly(encoder,decoder,context) # Evaluation on validation set
 
-            #enc_scheduler.step()
-            #dec_scheduler.step()
-            #con_scheduler.step()
-        #showPlot(plot_losses)
-
+            
     def evaluate(self, encoder, decoder, context, sentences, max_length=None,
             beam=1):
         max_length = self.max_sentence_length
@@ -471,13 +504,17 @@ class HRED_QA(object):
         return decoded_words
 
     def evaluateRandomly(self, encoder, decoder, context, n=10):
+        
+        ## Evaluation on 10 random dialogue sets in validation group
+        
         for i in range(n):
-            group = random.choice(self.groups)
+            group = random.choice(self.validation_grps)
+            print('Input dialogues : ')
             for gr in group:
                 print('>', gr)
             output_words = self.evaluate(encoder, decoder, context, group[:-1])
             output_sentence = ' '.join(output_words)
-            print('<', output_sentence)
+            print('Output dialogue : ', output_sentence)
             print('')
 
 def asMinutes(s):
