@@ -213,20 +213,94 @@ class HRED_QA(object):
         self.decoder_model = decoder_model
         self.context_model = context_model
 
+        
+    def validation_evaluate(self, encoder_model, decoder_model, context_model):
+      criterion = nn.NLLLoss()
+      epoch_loss = 0
+      epoch_steps = 0
+      context_hidden = context.initHidden()
+    
+      with torch.no_grad():
+        
+        num = len(self.validation_grps)
+        t = 0
+
+        while(t<num):
+          
+          if(t==0):
+            random.shuffle(self.validation_grps)   #in place shuffling of dialogue groups
+            
+          validation_group = self.variablesFromGroup(self.validation_grps[t])
+
+          for i in range(0, len(validation_group) - 1):
+                
+            last = False
+                
+            if(i+1 == len(validation_group) - 1):
+                last = True
+                epoch_steps += 1
+       
+            input_variable = validation_group[i]
+            target_variable = validation_group[i+1]
+          
+            max_length=self.max_sentence_length
+            encoder_hidden = encoder.initHidden()      #h0, initial encoder hidden state
+
+
+            input_length = input_variable.size()[0]      #num of words in a turn
+            target_length = target_variable.size()[0]    #num of words in output dialogue 
+
+            encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size))    #all the hidden states of encoderRNN
+            encoder_outputs = encoder_outputs.cuda() if use_cuda else encoder_outputs
+
+            loss = 0
+
+            for ei in range(input_length):
+                encoder_output, encoder_hidden = encoder(
+                input_variable[ei], encoder_hidden)       #feeding a single word of turn to encoder and getting all hidden states 
+                encoder_outputs[ei] = encoder_output[0][0]    #final encoded sentence 
+
+            decoder_input = Variable(torch.LongTensor([[self.SOS_token]]))
+            decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+
+            decoder_hidden = encoder_hidden 
+        
+            # calculate context
+            context_output,context_hidden = context(encoder_output,context_hidden)
+
+      
+        # Without teacher forcing: use its own predictions as the next input
+            for di in range(target_length):
+                decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_output, encoder_outputs,context_hidden)
+                topv, topi = decoder_output.data.topk(1)
+                ni = topi[0][0]
+
+                decoder_input = Variable(torch.LongTensor([[ni]]))
+                decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+
+                # only calculate loss if its the last turn
+                if last: 
+                    
+                    loss += criterion(decoder_output[0], target_variable[di])
+                    
+                if ni == self.EOS_token:
+                     break
+                        
+            epoch_loss += loss.item()/target_length
+            t += 1
+      
+      return epoch_loss / epoch_steps
 
     # for hred, train should take the context of the previous turn
     # should return current loss as well as context representation
 
     def train(self,input_variable, target_variable,
-            encoder, decoder, context, context_hidden,
-            encoder_optimizer, decoder_optimizer, criterion,
+            encoder, decoder, context, context_hidden, criterion,
             last,max_length=None):
 
         max_length=self.max_sentence_length
         encoder_hidden = encoder.initHidden()      #h0, initial encoder hidden state
 
-        #encoder_optimizer.zero_grad() # pytorch accumulates gradients, so zero grad clears them up.
-        #decoder_optimizer.zero_grad()
 
         input_length = input_variable.size()[0]      #num of words in a turn
         target_length = target_variable.size()[0]    #num of words in output dialogue 
@@ -331,8 +405,7 @@ class HRED_QA(object):
         print_loss_total = 0  # Reset every print_every
         plot_loss_total = 0  # Reset every plot_every
         epoch_loss_total = 0
-
-        #encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
+        
         decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
         context_optimizer = optim.Adam(context.parameters(), lr=learning_rate)
 
@@ -348,7 +421,6 @@ class HRED_QA(object):
         m = 0
         epochs = 0
         epoch_steps = 0
-        iter2 = 0
         best_valid_loss = float('inf')
         
         while (epochs<80):
@@ -375,7 +447,7 @@ class HRED_QA(object):
 
                 if last:
                     loss,context_hidden = self.train(input_variable, target_variable, encoder,
-                             decoder, context, context_hidden,  decoder_optimizer, criterion, last)
+                             decoder, context, context_hidden, criterion, last)
                     print_loss_total += loss
                     plot_loss_total += loss
                     epoch_loss_total +=loss
@@ -386,7 +458,7 @@ class HRED_QA(object):
                     
                 else:
                     context_hidden = self.train(input_variable, target_variable, encoder,
-                             decoder, context, context_hidden,  decoder_optimizer, criterion, last)
+                             decoder, context, context_hidden, criterion, last)
                     
 
             if iter % print_every == 0:
@@ -408,7 +480,7 @@ class HRED_QA(object):
               epoch_loss_total = 0
               print()   # new line space
               print('epochs %d train loss %.4f' % (epochs,epoch_loss_avg))
-              val_loss = self.validation_evaluate(encoder, decoder)
+              val_loss = self.validation_evaluate(encoder, decoder, context)
               print('epochs %d validation loss %.4f' % (epochs,val_loss))
               print() # new line space
 
